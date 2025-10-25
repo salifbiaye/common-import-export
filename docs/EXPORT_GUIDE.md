@@ -330,15 +330,39 @@ public List<User> findByFilters(Map<String, Object> filters) {
 
 ## Pagination
 
-### Activation
+### ⚠️ Comportement par défaut: Export TOUT
+
+**Sans query params `page` et `size`:**
 
 ```bash
-# Page 1, 100 éléments
+GET /api/users/export?format=xlsx
+```
+
+La lib passe automatiquement `Pageable.unpaged()` → **TOUS les résultats sont exportés** ✅
+
+**Avec ta méthode:**
+```java
+public Page<User> getAllUsers(String search, String role, Boolean isActive, Pageable pageable) {
+    // pageable = Pageable.unpaged() → Pas de limite!
+    // Résultat: TOUS les users (filtrés si search/role/isActive fournis)
+}
+```
+
+---
+
+### Pagination explicite (optionnelle)
+
+Si tu veux **limiter** l'export à un nombre spécifique:
+
+```bash
+# Page 1, 100 éléments seulement
 GET /api/users/export?format=xlsx&page=0&size=100
 
 # Page 2
 GET /api/users/export?format=xlsx&page=1&size=100
 ```
+
+La lib passe `PageRequest.of(page, size)` → Seulement la page demandée
 
 ### Implémentation
 
