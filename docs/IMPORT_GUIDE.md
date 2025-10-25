@@ -8,11 +8,12 @@ Guide complet pour l'import de fichiers Excel/CSV avec validation, gestion d'err
 
 1. [Configuration de base](#configuration-de-base)
 2. [Template Generation](#template-generation)
-3. [Validation](#validation)
-4. [Failure Strategies](#failure-strategies)
-5. [Batch Processing](#batch-processing)
-6. [Error Handling](#error-handling)
-7. [Advanced Topics](#advanced-topics)
+3. [Dropdown Lists (Listes déroulantes Excel)](#dropdown-lists-listes-déroulantes-excel)
+4. [Validation](#validation)
+5. [Failure Strategies](#failure-strategies)
+6. [Batch Processing](#batch-processing)
+7. [Error Handling](#error-handling)
+8. [Advanced Topics](#advanced-topics)
 
 ---
 
@@ -103,6 +104,154 @@ public User getExampleRow() {
     return example;
 }
 ```
+
+---
+
+## Dropdown Lists (Listes déroulantes Excel)
+
+### 🎯 Pourquoi utiliser les dropdowns?
+
+Les listes déroulantes Excel améliorent l'expérience utilisateur:
+- ✅ **Pas d'erreur de frappe** - Sélection au lieu de saisie
+- ✅ **Validation automatique** - Valeurs contrôlées par Excel
+- ✅ **User-friendly** - Clic pour choisir
+- ✅ **Parfait pour les enums** - Status, roles, priorités, etc.
+
+### Configuration
+
+Ajoutez la méthode `getDropdownOptions()` dans votre mapper:
+
+```java
+@Component
+public class UserImportMapper implements ImportMapper<UserRequest> {
+
+    @Override
+    public Map<String, List<String>> getDropdownOptions() {
+        return Map.of(
+            "typeUser", List.of("ADMIN", "CAISSIER", "COMPTABLE", "TRESORIER"),
+            "status", List.of("ACTIVE", "PENDING", "CLOSED")
+        );
+    }
+
+    // ... autres méthodes
+}
+```
+
+### Résultat dans le template Excel
+
+Le template généré aura des **listes déroulantes** pour les colonnes spécifiées:
+
+```
+┌──────────────┬──────────────┬───────────────────────┬──────────────┐
+│  firstName * │  lastName *  │       email *         │  typeUser *  │
+├──────────────┼──────────────┼───────────────────────┼──────────────┤
+│    Salif     │     Biaye    │  salif@bank.sn        │ CAISSIER ▼   │ ← Dropdown!
+└──────────────┴──────────────┴───────────────────────┴──────────────┘
+```
+
+Quand l'utilisateur clique sur la cellule `typeUser`, il voit:
+```
+┌──────────────────┐
+│ ADMIN            │
+│ CAISSIER         │
+│ COMPTABLE        │
+│ TRESORIER        │
+└──────────────────┘
+```
+
+### Validation automatique
+
+Si l'utilisateur tape une valeur **non présente** dans la liste:
+- ❌ Excel refuse la saisie
+- 📝 Message d'erreur: "Valeur invalide. Veuillez sélectionner une valeur dans la liste: ADMIN, CAISSIER, COMPTABLE, TRESORIER"
+- 🚫 Impossible de sauvegarder le fichier avec une valeur incorrecte
+
+### Exemple complet
+
+```java
+@Component
+public class ProductImportMapper implements ImportMapper<Product> {
+
+    private static final List<String> CATEGORIES = List.of(
+        "ELECTRONICS", "CLOTHING", "FOOD", "BOOKS", "TOYS"
+    );
+
+    private static final List<String> PRIORITIES = List.of(
+        "HIGH", "MEDIUM", "LOW"
+    );
+
+    private static final List<String> STATUS = List.of(
+        "AVAILABLE", "OUT_OF_STOCK", "DISCONTINUED"
+    );
+
+    @Override
+    public Map<String, List<String>> getDropdownOptions() {
+        return Map.of(
+            "category", CATEGORIES,
+            "priority", PRIORITIES,
+            "status", STATUS
+        );
+    }
+
+    @Override
+    public Product mapRow(Map<String, String> row, int rowNumber) {
+        Product product = new Product();
+        product.setName(row.get("name"));
+        product.setCategory(row.get("category"));    // Vient du dropdown
+        product.setPriority(row.get("priority"));    // Vient du dropdown
+        product.setStatus(row.get("status"));        // Vient du dropdown
+        return product;
+    }
+
+    // ... autres méthodes
+}
+```
+
+### Use cases
+
+| Use case | Colonne | Options |
+|----------|---------|---------|
+| **Gestion users** | typeUser | ADMIN, CAISSIER, COMPTABLE, etc. |
+| **Statuts** | status | ACTIVE, PENDING, CLOSED, CANCELLED |
+| **Priorités** | priority | HIGH, MEDIUM, LOW, CRITICAL |
+| **Catégories** | category | ELECTRONICS, CLOTHING, FOOD, etc. |
+| **Pays** | country | SENEGAL, FRANCE, MALI, etc. |
+| **Genres** | gender | MALE, FEMALE, OTHER |
+| **Oui/Non** | isActive | YES, NO |
+
+### Limites
+
+- ⚠️ Maximum **255 caractères** pour la liste complète (limitation Excel)
+- ⚠️ Si plus de 50 options, considérez une approche différente
+- ✅ Parfait pour **enums** et listes courtes (< 30 options)
+
+### Tips
+
+1. **Synchronisez avec vos enums:**
+```java
+@Override
+public Map<String, List<String>> getDropdownOptions() {
+    // Récupère automatiquement depuis l'enum
+    List<String> roles = Arrays.stream(UserRole.values())
+        .map(Enum::name)
+        .collect(Collectors.toList());
+
+    return Map.of("typeUser", roles);
+}
+```
+
+2. **Filtrez les valeurs autorisées:**
+```java
+// Exclure CLIENT de l'import
+List<String> roles = Arrays.stream(UserRole.values())
+    .map(Enum::name)
+    .filter(role -> !role.equals("CLIENT"))
+    .collect(Collectors.toList());
+```
+
+3. **Ajoutez des descriptions dans le template:**
+   - Headers clairs: "Role *" au lieu de "typeUser *"
+   - Exemple réaliste dans ligne 2
 
 ---
 
@@ -215,6 +364,16 @@ public void validate(User user, int rowNumber) throws Exception {
 ---
 
 ## Failure Strategies
+
+Les **Failure Strategies** définissent le comportement en cas d'erreur pendant l'import.
+
+### 📊 Comparaison rapide
+
+| Strategy | Première erreur | Continue parsing | Sauvegarde | Use case |
+|----------|----------------|------------------|------------|----------|
+| **FAIL_FAST** ⚡ | ❌ Arrêt immédiat | ❌ Non | ❌ Rien (rollback) | Import critique (finance, config) |
+| **SKIP_ERRORS** ⏭️ | ⏭️ Skip la ligne | ✅ Continue | ✅ Lignes valides uniquement | Import production (users, produits) |
+| **COLLECT_ALL** 🔍 | ✅ Continue | ✅ Continue | ❌ Rien (dry-run) | Validation pré-import |
 
 ### 1. FAIL_FAST (Tout ou rien)
 

@@ -13,13 +13,15 @@ Stop writing repetitive import/export code! Just add `@Importable` / `@Exportabl
 - ✅ **@Importable annotation** - Auto-generate import endpoints
 - ✅ **@Exportable annotation** - Auto-generate export endpoints
 - ✅ **Template generation** - GET /{entity}/import/template with example
+- ✅ **Excel dropdown lists** - User-friendly data entry with validation (NEW v1.0.1)
 - ✅ **Excel (.xlsx) & CSV** support
 - ✅ **Automatic validation** - Bean Validation integration
+- ✅ **3 Failure Strategies** - FAIL_FAST, SKIP_ERRORS, COLLECT_ALL
 - ✅ **Error handling** - Detailed error reports with row numbers
 - ✅ **Styled Excel exports** - Colors, bold, alignment, formats
 - ✅ **Simple config** - `"firstName: width=20, color=GREEN"`
 - ✅ **Zero boilerplate** - No controller code needed
-- ✅ **Synchronous** - No RabbitMQ/Kafka required (5000 rows max)
+- ✅ **Synchronous** - No RabbitMQ/Kafka required (500 rows max)
 
 ---
 
@@ -38,7 +40,7 @@ Stop writing repetitive import/export code! Just add `@Importable` / `@Exportabl
 <dependency>
     <groupId>com.github.salifbiaye</groupId>
     <artifactId>common-import-export</artifactId>
-    <version>v1.0.0</version>
+    <version>v1.0.1</version>
 </dependency>
 ```
 
@@ -96,8 +98,19 @@ public class UserImportMapper implements ImportMapper<User> {
         example.setEmail("john@example.com");
         return example;
     }
+
+    // ✨ NEW v1.0.1: Dropdown lists for user-friendly data entry
+    @Override
+    public Map<String, List<String>> getDropdownOptions() {
+        return Map.of(
+            "status", List.of("ACTIVE", "PENDING", "CLOSED"),
+            "priority", List.of("HIGH", "MEDIUM", "LOW")
+        );
+    }
 }
 ```
+
+**Result:** Excel template will have dropdown lists ▼ for `status` and `priority` columns - no typing errors!
 
 #### 3. That's it! Auto-generated endpoints:
 
