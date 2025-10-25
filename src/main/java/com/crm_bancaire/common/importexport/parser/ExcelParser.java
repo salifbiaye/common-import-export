@@ -2,6 +2,11 @@ package com.crm_bancaire.common.importexport.parser;
 
 import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.*;
+import org.apache.poi.ss.util.CellRangeAddressList;
+import org.apache.poi.xssf.usermodel.XSSFDataValidation;
+import org.apache.poi.xssf.usermodel.XSSFDataValidationConstraint;
+import org.apache.poi.xssf.usermodel.XSSFDataValidationHelper;
+import org.apache.poi.xssf.usermodel.XSSFSheet;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.stereotype.Component;
 import org.springframework.web.multipart.MultipartFile;
@@ -139,5 +144,95 @@ public class ExcelParser implements FileParser {
             }
         }
         return true;
+    }
+
+    /**
+     * Génère un template Excel avec headers, exemple et listes déroulantes.
+     *
+     * @param headers Liste des colonnes (avec * pour obligatoire)
+     * @param exampleData Map avec valeur exemple pour chaque colonne
+     * @param dropdownOptions Map avec options dropdown pour certaines colonnes
+     * @return Workbook prêt à être téléchargé
+     */
+    public Workbook generateTemplate(
+            List<String> headers,
+            Map<String, String> exampleData,
+            Map<String, List<String>> dropdownOptions
+    ) {
+        XSSFWorkbook workbook = new XSSFWorkbook();
+        XSSFSheet sheet = workbook.createSheet("Import");
+
+        // Style pour headers (bleu + gras + blanc)
+        CellStyle headerStyle = workbook.createCellStyle();
+        Font headerFont = workbook.createFont();
+        headerFont.setBold(true);
+        headerFont.setColor(IndexedColors.WHITE.getIndex());
+        headerStyle.setFont(headerFont);
+        headerStyle.setFillForegroundColor(IndexedColors.BLUE.getIndex());
+        headerStyle.setFillPattern(FillPatternType.SOLID_FOREGROUND);
+        headerStyle.setAlignment(HorizontalAlignment.CENTER);
+
+        // Ligne 1: Headers
+        Row headerRow = sheet.createRow(0);
+        for (int i = 0; i < headers.size(); i++) {
+            Cell cell = headerRow.createCell(i);
+            cell.setCellValue(headers.get(i));
+            cell.setCellStyle(headerStyle);
+
+            // Auto-size la colonne
+            String columnName = headers.get(i).replace("*", "").trim();
+            sheet.setColumnWidth(i, Math.max(3000, columnName.length() * 256 + 1000));
+        }
+
+        // Ligne 2: Exemple
+        Row exampleRow = sheet.createRow(1);
+        for (int i = 0; i < headers.size(); i++) {
+            String columnName = headers.get(i).replace("*", "").trim();
+            String value = exampleData.get(columnName);
+            if (value != null) {
+                Cell cell = exampleRow.createCell(i);
+                cell.setCellValue(value);
+            }
+        }
+
+        // Appliquer les listes déroulantes (data validation)
+        if (dropdownOptions != null && !dropdownOptions.isEmpty()) {
+            XSSFDataValidationHelper validationHelper = new XSSFDataValidationHelper(sheet);
+
+            for (int i = 0; i < headers.size(); i++) {
+                String columnName = headers.get(i).replace("*", "").trim();
+                List<String> options = dropdownOptions.get(columnName);
+
+                if (options != null && !options.isEmpty()) {
+                    // Créer la liste de valeurs autorisées
+                    String[] optionsArray = options.toArray(new String[0]);
+                    XSSFDataValidationConstraint constraint =
+                        (XSSFDataValidationConstraint) validationHelper.createExplicitListConstraint(optionsArray);
+
+                    // Appliquer sur les lignes 2 à 501 (row index 1 à 500)
+                    CellRangeAddressList addressList = new CellRangeAddressList(1, 500, i, i);
+                    XSSFDataValidation validation = (XSSFDataValidation) validationHelper.createValidation(constraint, addressList);
+
+                    // Configuration de la validation
+                    validation.setShowErrorBox(true);
+                    validation.setErrorStyle(DataValidation.ErrorStyle.STOP);
+                    validation.createErrorBox("Valeur invalide",
+                        "Veuillez sélectionner une valeur dans la liste: " + String.join(", ", options));
+                    validation.setSuppressDropDownArrow(false);
+
+                    sheet.addValidationData(validation);
+
+                    log.debug("Added dropdown for column {} with {} options", columnName, options.size());
+                }
+            }
+        }
+
+        // Figer la ligne de headers
+        sheet.createFreezePane(0, 1);
+
+        log.info("Generated Excel template with {} columns and {} dropdowns",
+            headers.size(), dropdownOptions != null ? dropdownOptions.size() : 0);
+
+        return workbook;
     }
 }

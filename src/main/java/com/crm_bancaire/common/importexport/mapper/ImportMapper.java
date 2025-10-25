@@ -91,4 +91,24 @@ public interface ImportMapper<T> {
         // Par défaut, pas de validation custom
         // La validation Bean sera faite automatiquement
     }
+
+    /**
+     * Retourne les options de liste déroulante pour certaines colonnes (optionnel).
+     * Utilisé pour générer des validations Excel dans le template.
+     *
+     * Exemple:
+     * <pre>
+     * {@code
+     * return Map.of(
+     *     "status", List.of("ACTIVE", "PENDING", "CLOSED"),
+     *     "priority", List.of("HIGH", "MEDIUM", "LOW")
+     * );
+     * }
+     * </pre>
+     *
+     * @return Map avec nom de colonne → liste de valeurs autorisées
+     */
+    default Map<String, List<String>> getDropdownOptions() {
+        return Map.of();
+    }
 }
