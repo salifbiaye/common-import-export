@@ -98,9 +98,9 @@ public class ExportService {
         Object result = method.invoke(service, params);
 
         if (result instanceof Page) {
-            return ((Page<?>) result).getContent();
+            return new ArrayList<>(((Page<?>) result).getContent());
         } else if (result instanceof List) {
-            return (List<Object>) result;
+            return new ArrayList<>((List<?>) result);
         }
 
         return List.of();

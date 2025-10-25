@@ -98,7 +98,7 @@ public class ImportService {
                     Object entity = mapper.mapRow(row, rowNumber);
 
                     // Validation custom du mapper
-                    mapper.validate(entity, rowNumber);
+                    validateEntity(mapper, entity, rowNumber);
 
                     // Bean Validation
                     Set<ConstraintViolation<Object>> violations = validator.validate(entity);
@@ -230,6 +230,14 @@ public class ImportService {
         } catch (NoSuchMethodException e) {
             return null;
         }
+    }
+
+    /**
+     * Valide une entité avec le mapper (contournement problème generics).
+     */
+    @SuppressWarnings("unchecked")
+    private <T> void validateEntity(ImportMapper<T> mapper, Object entity, int rowNumber) throws Exception {
+        mapper.validate((T) entity, rowNumber);
     }
 
     /**
