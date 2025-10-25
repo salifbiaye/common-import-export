@@ -183,16 +183,53 @@ GET /api/users/export?format=xlsx&isActive=true&role=CLIENT&city=Dakar
 
 ### Implémentation dans Service
 
-**Option 1: Query params automatiques**
+**Option 1: Utiliser votre méthode existante (Recommandé) ✅**
 
-Si vous avez une méthode qui accepte les filtres:
+La lib **auto-détecte** vos méthodes existantes! Pas besoin de créer une nouvelle méthode.
 
 ```java
 @Service
 @Exportable(
     entity = "User",
     fields = {"firstName", "lastName", "email", "role"},
-    findMethod = "findByFilters"  // ← Custom method
+    findMethod = "getAllUsers"  // ← Votre méthode existante!
+)
+public class UserService {
+
+    // Méthode DÉJÀ existante - La lib l'utilise automatiquement!
+    public Page<User> getAllUsers(String search, String role, Boolean isActive, Pageable pageable) {
+        // Votre code de filtrage existant avec Specification
+        Specification<User> spec = userFilterService.buildFilterSpecification(search, role, isActive);
+        return userRepository.findAll(spec, pageable);
+    }
+}
+```
+
+**Query params → Paramètres de méthode (Auto-mapping):**
+```bash
+?search=salif&isActive=true  → getAllUsers(search="salif", role=null, isActive=true, pageable)
+?role=ADMIN                  → getAllUsers(search=null, role="ADMIN", isActive=null, pageable)
+?isActive=false&role=CLIENT  → getAllUsers(search=null, role="CLIENT", isActive=false, pageable)
+```
+
+**Avantages:**
+- ✅ Utilise votre code existant (pas de duplication)
+- ✅ Mêmes filtres pour liste ET export
+- ✅ Auto-mapping des query params
+- ✅ Support Pageable automatique
+
+---
+
+**Option 2: Map générique**
+
+Si vous voulez un mapping manuel:
+
+```java
+@Service
+@Exportable(
+    entity = "User",
+    fields = {"firstName", "lastName", "email", "role"},
+    findMethod = "findByFilters"
 )
 public class UserService {
 
@@ -214,7 +251,9 @@ public class UserService {
 }
 ```
 
-**Option 2: Specification (recommandé)**
+---
+
+**Option 3: Specification (pour filtrage complexe)**
 
 ```java
 public List<User> findByFilters(Map<String, Object> filters) {
