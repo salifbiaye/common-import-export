@@ -10,6 +10,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.poi.ss.usermodel.*;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.springframework.aop.framework.AopProxyUtils;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -70,14 +71,18 @@ public class ExportService {
     private List<Object> fetchData(Object targetService, Exportable annotation, Map<String, String> queryParams) throws Exception {
         String methodName = annotation.findMethod();
 
+        // Récupérer la classe cible (pas le proxy CGLIB!)
+        Class<?> targetClass = AopProxyUtils.ultimateTargetClass(targetService);
+        log.debug("Fetching data from target class: {}", targetClass.getSimpleName());
+
         // Chercher méthode avec Pageable (préféré)
-        Method method = findMethodWithPageable(targetService.getClass(), methodName);
+        Method method = findMethodWithPageable(targetClass, methodName);
         if (method != null) {
             return fetchWithPageable(targetService, method, queryParams);
         }
 
         // Fallback: méthode simple findAll()
-        method = targetService.getClass().getMethod(methodName);
+        method = targetClass.getMethod(methodName);
         Object result = method.invoke(targetService);
 
         if (result instanceof List) {

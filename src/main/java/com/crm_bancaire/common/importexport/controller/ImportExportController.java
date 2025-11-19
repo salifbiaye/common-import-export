@@ -81,20 +81,35 @@ public class ImportExportController {
 
         // Vérifier que l'entité est importable
         if (!registry.isImportable(entity)) {
+            log.warn("Entity '{}' is not importable", entity);
             return ResponseEntity.notFound().build();
         }
 
         try {
+            log.info("Retrieving import config for entity '{}'", entity);
             // Récupérer config
             ImportExportRegistry.ImportConfig config = registry.getImportConfig(entity);
 
+            if (config == null) {
+                log.error("Import config is null for entity '{}'", entity);
+                return ResponseEntity.notFound().build();
+            }
+
+            log.info("Config retrieved: service={}, mapper={}",
+                    config.getService().getClass().getSimpleName(),
+                    config.getMapper().getClass().getSimpleName());
+
             // Générer template
             ExportFormat exportFormat = "csv".equalsIgnoreCase(format) ? ExportFormat.CSV : ExportFormat.XLSX;
+            log.info("Calling templateService.generateTemplate() with format: {}", exportFormat);
+
             byte[] template = templateService.generateTemplate(
-                config.getMapper(),
-                config.getAnnotation(),
-                exportFormat
+                    config.getMapper(),
+                    config.getAnnotation(),
+                    exportFormat
             );
+
+            log.info("Template generated successfully, size: {} bytes", template.length);
 
             // Préparer réponse
             String filename = entity + "-import-template" + exportFormat.getExtension();
@@ -102,12 +117,14 @@ public class ImportExportController {
             headers.setContentType(MediaType.parseMediaType(exportFormat.getContentType()));
             headers.setContentDispositionFormData("attachment", filename);
 
+            log.info("Sending response with filename: {}", filename);
+
             return ResponseEntity.ok()
-                .headers(headers)
-                .body(template);
+                    .headers(headers)
+                    .body(template);
 
         } catch (Exception e) {
-            log.error("Error generating template for entity '{}'", entity, e);
+            log.error("Error generating template for entity '{}': {}", entity, e.getMessage(), e);
             return ResponseEntity.internalServerError().build();
         }
     }

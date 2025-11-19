@@ -197,11 +197,15 @@ public class ExcelParser implements FileParser {
 
         // Appliquer les listes déroulantes (data validation)
         if (dropdownOptions != null && !dropdownOptions.isEmpty()) {
+            log.info("📋 Applying dropdowns: available options = {}", dropdownOptions.keySet());
             XSSFDataValidationHelper validationHelper = new XSSFDataValidationHelper(sheet);
 
             for (int i = 0; i < headers.size(); i++) {
                 String columnName = headers.get(i).replace("*", "").trim();
                 List<String> options = dropdownOptions.get(columnName);
+
+                log.info("🔍 Column {}: header='{}', cleanName='{}', hasOptions={}",
+                    i, headers.get(i), columnName, options != null);
 
                 if (options != null && !options.isEmpty()) {
                     // Créer la liste de valeurs autorisées
@@ -213,16 +217,40 @@ public class ExcelParser implements FileParser {
                     CellRangeAddressList addressList = new CellRangeAddressList(1, 500, i, i);
                     XSSFDataValidation validation = (XSSFDataValidation) validationHelper.createValidation(constraint, addressList);
 
-                    // Configuration de la validation
+                    // Configuration: ordre important!
+                    validation.setSuppressDropDownArrow(false);
+                    validation.setEmptyCellAllowed(true);
+
+                    // Message d'erreur (max 255 caractères)
                     validation.setShowErrorBox(true);
                     validation.setErrorStyle(DataValidation.ErrorStyle.STOP);
                     validation.createErrorBox("Valeur invalide",
-                        "Veuillez sélectionner une valeur dans la liste: " + String.join(", ", options));
-                    validation.setSuppressDropDownArrow(false);
+                        String.format("Valeur invalide pour '%s'. Utilisez Alt+Flèche Bas pour voir les %d options disponibles.",
+                            columnName, options.size()));
+
+                    // Message d'aide visible quand on sélectionne la cellule (max 255 caractères)
+                    validation.setShowPromptBox(true);
+                    // Limiter à 10 premières options si trop de valeurs
+                    List<String> displayOptions = options.size() > 10 ? options.subList(0, 10) : options;
+                    String optionsList = String.join(", ", displayOptions);
+                    if (options.size() > 10) {
+                        optionsList += String.format("... (%d autres)", options.size() - 10);
+                    }
+
+                    String promptMessage = String.format("%s: %s. Alt+Flèche Bas pour liste complète",
+                        columnName, optionsList);
+
+                    // S'assurer que le message ne dépasse pas 255 caractères
+                    if (promptMessage.length() > 250) {
+                        promptMessage = promptMessage.substring(0, 247) + "...";
+                    }
+
+                    validation.createPromptBox("Options " + columnName, promptMessage);
 
                     sheet.addValidationData(validation);
 
-                    log.debug("Added dropdown for column {} with {} options", columnName, options.size());
+                    log.info("✅ Added dropdown for column '{}' (index {}) with {} options",
+                        columnName, i, options.size());
                 }
             }
         }

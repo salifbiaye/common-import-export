@@ -64,13 +64,18 @@ public class TemplateService {
 
         // 5. Écrire en ByteArray
         ByteArrayOutputStream out = new ByteArrayOutputStream();
-        workbook.write(out);
-        workbook.close();
+        try {
+            workbook.write(out);
+            out.flush();  // Force flush avant fermeture
 
-        log.info("Generated Excel template with {} columns and {} dropdowns",
-            headers.size(), dropdownOptions.size());
+            log.info("Generated Excel template with {} columns and {} dropdowns, size: {} bytes",
+                headers.size(), dropdownOptions.size(), out.size());
 
-        return out.toByteArray();
+            return out.toByteArray();
+        } finally {
+            workbook.close();
+            out.close();
+        }
     }
 
     /**

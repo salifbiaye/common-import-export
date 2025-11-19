@@ -5,9 +5,11 @@ import com.crm_bancaire.common.importexport.annotation.Importable;
 import com.crm_bancaire.common.importexport.mapper.ImportMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.aop.framework.AopProxyUtils;
 import org.springframework.beans.BeansException;
 import org.springframework.beans.factory.config.BeanPostProcessor;
 import org.springframework.context.ApplicationContext;
+import org.springframework.core.annotation.AnnotationUtils;
 import org.springframework.stereotype.Component;
 
 /**
@@ -24,18 +26,19 @@ public class ImportExportBeanPostProcessor implements BeanPostProcessor {
 
     @Override
     public Object postProcessAfterInitialization(Object bean, String beanName) throws BeansException {
-        Class<?> beanClass = bean.getClass();
+        // Récupérer la classe cible (pas le proxy!)
+        Class<?> targetClass = AopProxyUtils.ultimateTargetClass(bean);
 
-        // Vérifier @Importable
-        Importable importable = beanClass.getAnnotation(Importable.class);
+        // Vérifier @Importable sur la classe cible
+        Importable importable = AnnotationUtils.findAnnotation(targetClass, Importable.class);
         if (importable != null) {
-            registerImportable(bean, importable);
+            registerImportable(bean, importable, targetClass);
         }
 
-        // Vérifier @Exportable
-        Exportable exportable = beanClass.getAnnotation(Exportable.class);
+        // Vérifier @Exportable sur la classe cible
+        Exportable exportable = AnnotationUtils.findAnnotation(targetClass, Exportable.class);
         if (exportable != null) {
-            registerExportable(bean, exportable);
+            registerExportable(bean, exportable, targetClass);
         }
 
         return bean;
@@ -44,7 +47,7 @@ public class ImportExportBeanPostProcessor implements BeanPostProcessor {
     /**
      * Enregistre un service @Importable.
      */
-    private void registerImportable(Object service, Importable annotation) {
+    private void registerImportable(Object service, Importable annotation, Class<?> targetClass) {
         try {
             String entity = annotation.entity();
 
@@ -56,17 +59,18 @@ public class ImportExportBeanPostProcessor implements BeanPostProcessor {
             registry.registerImportable(entity, service, annotation, mapper);
 
             log.info("✅ @Importable registered: {} → POST /api/{}/import",
-                service.getClass().getSimpleName(), entity);
+                targetClass.getSimpleName(), entity);
 
         } catch (Exception e) {
-            log.error("Failed to register @Importable for {}", service.getClass().getSimpleName(), e);
+            log.error("❌ Failed to register @Importable for {}: {}",
+                targetClass.getSimpleName(), e.getMessage(), e);
         }
     }
 
     /**
      * Enregistre un service @Exportable.
      */
-    private void registerExportable(Object service, Exportable annotation) {
+    private void registerExportable(Object service, Exportable annotation, Class<?> targetClass) {
         try {
             String entity = annotation.entity();
 
@@ -74,10 +78,11 @@ public class ImportExportBeanPostProcessor implements BeanPostProcessor {
             registry.registerExportable(entity, service, annotation);
 
             log.info("✅ @Exportable registered: {} → GET /api/{}/export",
-                service.getClass().getSimpleName(), entity);
+                targetClass.getSimpleName(), entity);
 
         } catch (Exception e) {
-            log.error("Failed to register @Exportable for {}", service.getClass().getSimpleName(), e);
+            log.error("❌ Failed to register @Exportable for {}: {}",
+                targetClass.getSimpleName(), e.getMessage(), e);
         }
     }
 }

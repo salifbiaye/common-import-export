@@ -5,6 +5,8 @@ import com.crm_bancaire.common.importexport.annotation.Importable;
 import com.crm_bancaire.common.importexport.mapper.ImportMapper;
 import lombok.Data;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.config.BeanDefinition;
+import org.springframework.context.annotation.Role;
 import org.springframework.stereotype.Component;
 
 import java.util.Map;
@@ -12,8 +14,10 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Registre global pour stocker la configuration des services @Importable et @Exportable.
+ * Marqué avec ROLE_INFRASTRUCTURE pour éviter les problèmes avec BeanPostProcessors.
  */
 @Component
+@Role(BeanDefinition.ROLE_INFRASTRUCTURE)
 @Slf4j
 public class ImportExportRegistry {
 
