@@ -181,10 +181,28 @@ public class ImportService {
                 return saveInBatches(entities, targetService, saveAllMethod, batchSize);
             }
 
-            // Fallback: méthode save unitaire
-            Method saveMethod = findMethod(targetService.getClass(), methodName, Object.class);
+            // Fallback: méthode save unitaire - chercher avec le type réel de l'entité
+            Method saveMethod = null;
+            if (!entities.isEmpty()) {
+                Class<?> entityType = entities.get(0).getClass();
+                log.debug("Searching for method {}({}) in {}", methodName, entityType.getSimpleName(), targetService.getClass().getSimpleName());
+                saveMethod = findMethod(targetService.getClass(), methodName, entityType);
+            }
+            
+            // Si pas trouvé avec le type exact, essayer avec Object.class
             if (saveMethod == null) {
-                log.error("No save method found: {} or {}All", methodName, methodName);
+                log.debug("Method not found with exact type, trying with Object.class");
+                saveMethod = findMethod(targetService.getClass(), methodName, Object.class);
+            }
+            
+            if (saveMethod == null) {
+                log.error("No save method found: {} or {}All in class {}", methodName, methodName, targetService.getClass().getName());
+                log.error("Available public methods:");
+                for (Method m : targetService.getClass().getMethods()) {
+                    if (m.getName().equals(methodName)) {
+                        log.error("  - {}({})", m.getName(), m.getParameterTypes()[0].getSimpleName());
+                    }
+                }
                 return 0;
             }
 
