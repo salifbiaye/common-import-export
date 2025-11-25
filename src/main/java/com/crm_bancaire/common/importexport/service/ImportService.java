@@ -126,13 +126,15 @@ public class ImportService {
                 }
             }
 
-            // 6. COLLECT_ALL: Ne rien sauvegarder, juste retourner les erreurs
+            // 6. COLLECT_ALL: Sauvegarder SEULEMENT si aucune erreur
             if (strategy == FailureStrategy.COLLECT_ALL) {
-                String message = errors.isEmpty()
-                    ? "Validation réussie. Aucune donnée n'a été sauvegardée (mode COLLECT_ALL)."
-                    : errors.size() + " erreur(s) trouvée(s). Aucune donnée n'a été sauvegardée (mode COLLECT_ALL).";
-
-                return buildResponse(start, rows.size(), 0, errors, errors.isEmpty(), message);
+                if (!errors.isEmpty()) {
+                    // Il y a des erreurs, ne rien sauvegarder
+                    String message = errors.size() + " erreur(s) trouvée(s). Aucune donnée n'a été sauvegardée.";
+                    return buildResponse(start, rows.size(), 0, errors, false, message);
+                }
+                // Aucune erreur, on peut sauvegarder tout
+                log.info("COLLECT_ALL: No errors found, proceeding to save all {} entities", entities.size());
             }
 
             // 7. Sauvegarder les entités valides (SKIP_ERRORS ou FAIL_FAST)
