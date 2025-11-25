@@ -84,10 +84,14 @@ public class ImportService {
                     .build();
             }
 
-            // 5. Mapper et valider
+            // 5. Mapper, valider et sauvegarder
             List<Object> entities = new ArrayList<>();
             List<ImportError> errors = new ArrayList<>();
             FailureStrategy strategy = annotation.failureStrategy();
+            int savedCount = 0;
+
+            // Trouver la méthode de sauvegarde
+            Method saveMethod = findSaveMethod(targetService, annotation);
 
             for (int i = 0; i < rows.size(); i++) {
                 int rowNumber = i + 2; // Ligne 1 = headers, donc data commence à 2
@@ -107,7 +111,19 @@ public class ImportService {
                         throw new IllegalArgumentException(first.getMessage());
                     }
 
-                    entities.add(entity);
+                    // Pour COLLECT_ALL, on collecte sans sauvegarder
+                    if (strategy == FailureStrategy.COLLECT_ALL) {
+                        entities.add(entity);
+                    } else {
+                        // Pour SKIP_ERRORS et FAIL_FAST, on sauvegarde immédiatement
+                        try {
+                            saveMethod.invoke(targetService, entity);
+                            savedCount++;
+                        } catch (Exception saveEx) {
+                            Throwable cause = saveEx.getCause() != null ? saveEx.getCause() : saveEx;
+                            throw new RuntimeException(cause.getMessage(), cause);
+                        }
+                    }
 
                 } catch (Exception e) {
                     ImportError error = ImportError.builder()
@@ -120,7 +136,7 @@ public class ImportService {
 
                     // Stratégie de gestion d'erreur
                     if (strategy == FailureStrategy.FAIL_FAST) {
-                        return buildResponse(start, rows.size(), 0, errors, false,
+                        return buildResponse(start, rows.size(), savedCount, errors, false,
                             "Import arrêté à la ligne " + rowNumber + ": " + e.getMessage());
                     }
                 }
@@ -133,24 +149,23 @@ public class ImportService {
                     String message = errors.size() + " erreur(s) trouvée(s). Aucune donnée n'a été sauvegardée.";
                     return buildResponse(start, rows.size(), 0, errors, false, message);
                 }
-                // Aucune erreur, on peut sauvegarder tout
+                // Aucune erreur, sauvegarder tout
                 log.info("COLLECT_ALL: No errors found, proceeding to save all {} entities", entities.size());
-            }
-
-            // 7. Sauvegarder les entités valides
-            int savedCount = 0;
-            if (!entities.isEmpty()) {
-                try {
-                    savedCount = saveEntities(entities, targetService, annotation);
-                } catch (Exception e) {
-                    // Erreur lors de la sauvegarde - ajouter aux erreurs
-                    Throwable cause = e.getCause() != null ? e.getCause() : e;
-                    ImportError error = ImportError.builder()
-                        .row(0) // On ne sait pas quelle ligne exactement
-                        .message("Erreur lors de la sauvegarde: " + cause.getMessage())
-                        .build();
-                    errors.add(error);
-                    log.error("Error during save: {}", cause.getMessage());
+                for (Object entity : entities) {
+                    try {
+                        saveMethod.invoke(targetService, entity);
+                        savedCount++;
+                    } catch (Exception e) {
+                        Throwable cause = e.getCause() != null ? e.getCause() : e;
+                        log.error("Error saving entity: {}", cause.getMessage());
+                        // En COLLECT_ALL, si erreur à la sauvegarde, on arrête tout
+                        ImportError error = ImportError.builder()
+                            .row(0)
+                            .message("Erreur lors de la sauvegarde: " + cause.getMessage())
+                            .build();
+                        errors.add(error);
+                        return buildResponse(start, rows.size(), 0, errors, false, cause.getMessage());
+                    }
                 }
             }
 
@@ -178,6 +193,22 @@ public class ImportService {
             .filter(p -> p.supports(filename))
             .findFirst()
             .orElse(null);
+    }
+
+    /**
+     * Trouve la méthode de sauvegarde.
+     */
+    private Method findSaveMethod(Object targetService, Importable annotation) throws Exception {
+        String methodName = annotation.saveMethod();
+        
+        // Essayer de trouver la méthode avec n'importe quel type de paramètre
+        for (Method method : targetService.getClass().getMethods()) {
+            if (method.getName().equals(methodName) && method.getParameterCount() == 1) {
+                return method;
+            }
+        }
+        
+        throw new RuntimeException("No save method found: " + methodName);
     }
 
     /**
