@@ -137,14 +137,25 @@ public class ImportService {
                 log.info("COLLECT_ALL: No errors found, proceeding to save all {} entities", entities.size());
             }
 
-            // 7. Sauvegarder les entités valides (SKIP_ERRORS ou FAIL_FAST)
+            // 7. Sauvegarder les entités valides
             int savedCount = 0;
             if (!entities.isEmpty()) {
-                savedCount = saveEntities(entities, targetService, annotation);
+                try {
+                    savedCount = saveEntities(entities, targetService, annotation);
+                } catch (Exception e) {
+                    // Erreur lors de la sauvegarde - ajouter aux erreurs
+                    Throwable cause = e.getCause() != null ? e.getCause() : e;
+                    ImportError error = ImportError.builder()
+                        .row(0) // On ne sait pas quelle ligne exactement
+                        .message("Erreur lors de la sauvegarde: " + cause.getMessage())
+                        .build();
+                    errors.add(error);
+                    log.error("Error during save: {}", cause.getMessage());
+                }
             }
 
             // 8. Construire la réponse
-            boolean success = errors.isEmpty() || strategy == FailureStrategy.SKIP_ERRORS;
+            boolean success = errors.isEmpty() || (strategy == FailureStrategy.SKIP_ERRORS && savedCount > 0);
             String message = buildSuccessMessage(rows.size(), savedCount, errors.size(), strategy);
 
             return buildResponse(start, rows.size(), savedCount, errors, success, message);
@@ -172,48 +183,42 @@ public class ImportService {
     /**
      * Sauvegarde les entités via la méthode save du service cible.
      */
-    private int saveEntities(List<Object> entities, Object targetService, Importable annotation) {
-        try {
-            String methodName = annotation.saveMethod();
-            int batchSize = annotation.batchSize();
+    private int saveEntities(List<Object> entities, Object targetService, Importable annotation) throws Exception {
+        String methodName = annotation.saveMethod();
+        int batchSize = annotation.batchSize();
 
-            // Chercher saveAll d'abord (plus performant)
-            Method saveAllMethod = findMethod(targetService.getClass(), methodName + "All", List.class);
-            if (saveAllMethod != null) {
-                return saveInBatches(entities, targetService, saveAllMethod, batchSize);
-            }
-
-            // Fallback: méthode save unitaire - chercher avec le type réel de l'entité
-            Method saveMethod = null;
-            if (!entities.isEmpty()) {
-                Class<?> entityType = entities.get(0).getClass();
-                log.debug("Searching for method {}({}) in {}", methodName, entityType.getSimpleName(), targetService.getClass().getSimpleName());
-                saveMethod = findMethod(targetService.getClass(), methodName, entityType);
-            }
-            
-            // Si pas trouvé avec le type exact, essayer avec Object.class
-            if (saveMethod == null) {
-                log.debug("Method not found with exact type, trying with Object.class");
-                saveMethod = findMethod(targetService.getClass(), methodName, Object.class);
-            }
-            
-            if (saveMethod == null) {
-                log.error("No save method found: {} or {}All in class {}", methodName, methodName, targetService.getClass().getName());
-                log.error("Available public methods:");
-                for (Method m : targetService.getClass().getMethods()) {
-                    if (m.getName().equals(methodName)) {
-                        log.error("  - {}({})", m.getName(), m.getParameterTypes()[0].getSimpleName());
-                    }
-                }
-                return 0;
-            }
-
-            return saveOneByOne(entities, targetService, saveMethod);
-
-        } catch (Exception e) {
-            log.error("Error saving entities", e);
-            return 0;
+        // Chercher saveAll d'abord (plus performant)
+        Method saveAllMethod = findMethod(targetService.getClass(), methodName + "All", List.class);
+        if (saveAllMethod != null) {
+            return saveInBatches(entities, targetService, saveAllMethod, batchSize);
         }
+
+        // Fallback: méthode save unitaire - chercher avec le type réel de l'entité
+        Method saveMethod = null;
+        if (!entities.isEmpty()) {
+            Class<?> entityType = entities.get(0).getClass();
+            log.debug("Searching for method {}({}) in {}", methodName, entityType.getSimpleName(), targetService.getClass().getSimpleName());
+            saveMethod = findMethod(targetService.getClass(), methodName, entityType);
+        }
+        
+        // Si pas trouvé avec le type exact, essayer avec Object.class
+        if (saveMethod == null) {
+            log.debug("Method not found with exact type, trying with Object.class");
+            saveMethod = findMethod(targetService.getClass(), methodName, Object.class);
+        }
+        
+        if (saveMethod == null) {
+            log.error("No save method found: {} or {}All in class {}", methodName, methodName, targetService.getClass().getName());
+            log.error("Available public methods:");
+            for (Method m : targetService.getClass().getMethods()) {
+                if (m.getName().equals(methodName)) {
+                    log.error("  - {}({})", m.getName(), m.getParameterTypes()[0].getSimpleName());
+                }
+            }
+            throw new RuntimeException("No save method found: " + methodName);
+        }
+
+        return saveOneByOne(entities, targetService, saveMethod);
     }
 
     /**
@@ -235,10 +240,19 @@ public class ImportService {
      * Sauvegarde un par un (save).
      */
     private int saveOneByOne(List<Object> entities, Object service, Method saveMethod) throws Exception {
+        int saved = 0;
         for (Object entity : entities) {
-            saveMethod.invoke(service, entity);
+            try {
+                saveMethod.invoke(service, entity);
+                saved++;
+            } catch (Exception e) {
+                // Extraire la vraie exception si c'est une InvocationTargetException
+                Throwable cause = e.getCause() != null ? e.getCause() : e;
+                log.error("Error saving entity: {}", cause.getMessage());
+                throw new RuntimeException(cause.getMessage(), cause);
+            }
         }
-        return entities.size();
+        return saved;
     }
 
     /**
